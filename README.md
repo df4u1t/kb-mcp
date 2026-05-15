@@ -93,7 +93,7 @@ Add the following configuration to your MCP settings file:
   "mcpServers": {
     "security-intelligence": {
       "command": "node",
-      "args": ["C:/Users/d_f4u/Projects/kb-mcp/dist/index.js"],
+      "args": ["FULL_PATH_TO/kb-mcp/dist/index.js"],
       "env": {
         "VIRUSTOTAL_API_KEY": "your_vt_key",
         "SHODAN_API_KEY": "your_shodan_key",
@@ -114,7 +114,7 @@ mcpServers:
   security-intelligence:
     command: "node"
     args:
-      - "C:/Users/d_f4u/Projects/kb-mcp/dist/index.js"
+      - "FULL_PATH_TO/kb-mcp/dist/index.js"
     env:
       VIRUSTOTAL_API_KEY: "your_vt_key"
       SHODAN_API_KEY: "your_shodan_key"
