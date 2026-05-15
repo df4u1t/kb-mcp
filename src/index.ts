@@ -12,6 +12,9 @@ import { AnyRunProvider } from './providers/anyrun.js';
 import { AlienVaultOTXProvider } from './providers/alienvault.js';
 import { GitHubProvider } from './providers/github.js';
 import { SigmaRuleGenerator } from './providers/sigma.js';
+import { parseSigmaRule, parseSigmaRules, analyzeSigmaRules } from './sigma/parser.js';
+import { convertSigmaRule, convertSigmaRules } from './sigma/converters/index.js';
+import { searchSigmaHQ, searchSigmaHQByCVE, searchSigmaHQByTechnique } from './sigma/repo.js';
 import axios from 'axios';
 
 const vt = new VirusTotalProvider();
@@ -160,20 +163,158 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'generate_sigma_rules',
-        description: 'Generate Sigma detection rules (YAML) from threat indicators such as IPs, domains, URLs, file hashes, or CVEs',
+        description: 'Generate Sigma detection rules (YAML) from threat indicators such as IPs, domains, URLs, file hashes, CVEs, emails, registry keys, mutexes, IP ranges, or keywords',
         inputSchema: {
           type: 'object',
           properties: {
             indicators: {
               type: 'string',
-              description: 'JSON string of threat indicators array. Each object: { "type": "ip|domain|url|hash|cve", "value": "...", "description?": "...", "references?": ["..."], "tags?": ["..."] }',
+              description: 'JSON string of threat indicators array. Each object: { "type": "ip|domain|url|hash|cve|email|registry|mutex|ip_range|keyword", "value": "...", "description?": "...", "references?": ["..."], "tags?": ["..."], "matchType?": "exact|contains|startswith|endswith", "keywordFields?": ["field1","field2"], "selectionName?": "custom_name" }',
             },
             level: { type: 'string', enum: ['informational', 'low', 'medium', 'high', 'critical'], description: 'Severity level (default: high)' },
             status: { type: 'string', enum: ['stable', 'test', 'experimental'], description: 'Rule status (default: test)' },
             author: { type: 'string', description: 'Rule author name' },
             outputFormat: { type: 'string', enum: ['single', 'separate'], description: '"single" combines all indicators into one rule, "separate" creates one rule per indicator (default: separate)' },
+            platform: { type: 'string', enum: ['windows', 'linux', 'macos', 'cross'], description: 'Target platform for logsource (default: windows)' },
+            falsepositives: { type: 'string', description: 'JSON array of false positive references (default: ["Unknown"])' },
+            ruleId: { type: 'string', description: 'Custom rule ID (UUID). If omitted, a deterministic ID is generated from indicator values.' },
+            fields: { type: 'string', description: 'JSON array of additional log fields to include in the rule' },
+            mitreAttack: { type: 'string', description: 'JSON array of MITRE ATT&CK technique IDs to add as tags (e.g., ["attack.t1566.001","attack.t1204"])' },
+            related: { type: 'string', description: 'JSON array of related rule IDs for the "related" field' },
+            condition: { type: 'string', description: 'Custom detection condition expression (e.g., "selection1 and not selection2"). Only used in "single" mode.' },
           },
           required: ['indicators'],
+        },
+      },
+      {
+        name: 'sigma_from_intelligence',
+        description: 'Query a threat intelligence provider and auto-generate Sigma detection rules from the results. Supports VirusTotal, Shodan, NVD, and AlienVault OTX.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            provider: { type: 'string', enum: ['virustotal', 'shodan', 'nvd', 'otx'], description: 'Threat intelligence provider to query' },
+            query: { type: 'string', description: 'Query value (e.g., IP, domain, CVE ID, or search term depending on provider)' },
+            level: { type: 'string', enum: ['informational', 'low', 'medium', 'high', 'critical'], description: 'Severity level (default: high)' },
+            status: { type: 'string', enum: ['stable', 'test', 'experimental'], description: 'Rule status (default: test)' },
+            author: { type: 'string', description: 'Rule author name' },
+            outputFormat: { type: 'string', enum: ['single', 'separate'], description: '"single" combines all indicators into one rule, "separate" creates one rule per indicator (default: separate)' },
+            platform: { type: 'string', enum: ['windows', 'linux', 'macos', 'cross'], description: 'Target platform for logsource (default: windows)' },
+            mitreAttack: { type: 'string', description: 'JSON array of MITRE ATT&CK technique IDs to add as tags' },
+          },
+          required: ['provider', 'query'],
+        },
+      },
+      {
+        name: 'sigma_enrich_and_generate',
+        description: 'Enrich raw indicators through threat intelligence providers and generate Sigma detection rules from the enriched results.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            indicators: {
+              type: 'string',
+              description: 'JSON string of raw indicators to enrich. Each object: { "type": "ip|domain|hash|url|cve", "value": "..." }',
+            },
+            level: { type: 'string', enum: ['informational', 'low', 'medium', 'high', 'critical'], description: 'Severity level (default: high)' },
+            status: { type: 'string', enum: ['stable', 'test', 'experimental'], description: 'Rule status (default: test)' },
+            author: { type: 'string', description: 'Rule author name' },
+            outputFormat: { type: 'string', enum: ['single', 'separate'], description: '"single" combines all indicators into one rule, "separate" creates one rule per indicator (default: separate)' },
+            platform: { type: 'string', enum: ['windows', 'linux', 'macos', 'cross'], description: 'Target platform for logsource (default: windows)' },
+            mitreAttack: { type: 'string', description: 'JSON array of MITRE ATT&CK technique IDs to add as tags' },
+          },
+          required: ['indicators'],
+        },
+      },
+      {
+        name: 'parse_sigma_rule',
+        description: 'Parse a Sigma YAML rule string and return a structured analysis including extracted indicators, detection logic, and validation warnings.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            yaml: { type: 'string', description: 'The Sigma YAML rule content to parse' },
+          },
+          required: ['yaml'],
+        },
+      },
+      {
+        name: 'parse_sigma_rules',
+        description: 'Parse multiple Sigma YAML rules (separated by ---) and return structured analysis for each.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            yaml: { type: 'string', description: 'Multi-document Sigma YAML content (rules separated by ---)' },
+          },
+          required: ['yaml'],
+        },
+      },
+      {
+        name: 'analyze_sigma_rules',
+        description: 'Analyze multiple Sigma rules for overlaps, conflicts, and coverage gaps.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            yaml: { type: 'string', description: 'Multi-document Sigma YAML content (rules separated by ---)' },
+          },
+          required: ['yaml'],
+        },
+      },
+      {
+        name: 'convert_sigma_rule',
+        description: 'Convert a Sigma YAML rule to a target SIEM format (Splunk SPL, Elastic EQL/DSL, QRadar AQL).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            yaml: { type: 'string', description: 'The Sigma YAML rule content to convert' },
+            target: { type: 'string', enum: ['splunk', 'splunk_alert', 'elastic_eql', 'elastic_dsl', 'qradar', 'qradar_rule'], description: 'Target SIEM format' },
+          },
+          required: ['yaml', 'target'],
+        },
+      },
+      {
+        name: 'convert_sigma_rules',
+        description: 'Convert multiple Sigma YAML rules to a target SIEM format.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            yaml: { type: 'string', description: 'Multi-document Sigma YAML content (rules separated by ---)' },
+            target: { type: 'string', enum: ['splunk', 'splunk_alert', 'elastic_eql', 'elastic_dsl', 'qradar', 'qradar_rule'], description: 'Target SIEM format' },
+          },
+          required: ['yaml', 'target'],
+        },
+      },
+      {
+        name: 'search_sigma_hq',
+        description: 'Search the Sigma HQ community repository for rules matching a query (CVE, technique, keyword, or indicator).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query (e.g., "CVE-2021-44228", "attack.t1566", "powershell", or a domain/IP)' },
+            maxResults: { type: 'number', description: 'Maximum results to return (default: 20)' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'search_sigma_hq_cve',
+        description: 'Search the Sigma HQ repository for rules related to a specific CVE.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            cveId: { type: 'string', description: 'CVE ID to search for (e.g., CVE-2021-44228)' },
+            maxResults: { type: 'number', description: 'Maximum results to return (default: 10)' },
+          },
+          required: ['cveId'],
+        },
+      },
+      {
+        name: 'search_sigma_hq_technique',
+        description: 'Search the Sigma HQ repository for rules related to a specific MITRE ATT&CK technique.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            techniqueId: { type: 'string', description: 'MITRE ATT&CK technique ID (e.g., attack.t1566.001 or t1566)' },
+            maxResults: { type: 'number', description: 'Maximum results to return (default: 10)' },
+          },
+          required: ['techniqueId'],
         },
       },
       {
@@ -339,8 +480,170 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: args.status as any,
           author: args.author as string | undefined,
           outputFormat: args.outputFormat as any,
+          platform: args.platform as any,
+          falsepositives: args.falsepositives ? JSON.parse(args.falsepositives as string) : undefined,
+          ruleId: args.ruleId as string | undefined,
+          fields: args.fields ? JSON.parse(args.fields as string) : undefined,
+          mitreAttack: args.mitreAttack ? JSON.parse(args.mitreAttack as string) : undefined,
+          related: args.related ? JSON.parse(args.related as string) : undefined,
+          condition: args.condition as string | undefined,
         });
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      }
+      case 'sigma_from_intelligence': {
+        const providerName = args.provider as string;
+        const query = args.query as string;
+        let providerResult: any;
+
+        switch (providerName) {
+          case 'virustotal': {
+            // Try to determine indicator type
+            const isIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(query);
+            const isHash = /^[a-fA-F0-9]{32,128}$/.test(query);
+            const isDomain = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(query);
+            if (isIp) providerResult = await vt.getIpReport(query);
+            else if (isHash) providerResult = await vt.getFileReport(query);
+            else if (isDomain) providerResult = await vt.getDomainReport(query);
+            else providerResult = await vt.getUrlReport(query);
+            break;
+          }
+          case 'shodan': {
+            providerResult = await shodan.getHostInfo(query);
+            break;
+          }
+          case 'nvd': {
+            const isCve = /^CVE-\d{4}-\d{4,}$/i.test(query);
+            if (isCve) providerResult = await nvd.getCveDetails(query);
+            else providerResult = await nvd.searchCves({ keyword: query });
+            break;
+          }
+          case 'otx': {
+            const isIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(query);
+            const isHash = /^[a-fA-F0-9]{32,128}$/.test(query);
+            const isDomain = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(query);
+            if (isIp) providerResult = await otx.getIndicatorDetails('IPv4', query);
+            else if (isHash) providerResult = await otx.getIndicatorDetails('file', query);
+            else if (isDomain) providerResult = await otx.getIndicatorDetails('domain', query);
+            else providerResult = await otx.searchPulses(query);
+            break;
+          }
+          default:
+            throw new Error(`Unknown provider: ${providerName}`);
+        }
+
+        const sigmaResult = sigma.generateFromProviderResult(providerName, providerResult.data, {
+          level: args.level as any,
+          status: args.status as any,
+          author: args.author as string | undefined,
+          outputFormat: args.outputFormat as any,
+          platform: args.platform as any,
+          mitreAttack: args.mitreAttack ? JSON.parse(args.mitreAttack as string) : undefined,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(sigmaResult) }] };
+      }
+      case 'sigma_enrich_and_generate': {
+        const rawIndicators = JSON.parse(args.indicators as string);
+        const allEnrichedIndicators: any[] = [];
+
+        for (const ind of rawIndicators) {
+          switch (ind.type) {
+            case 'ip': {
+              const vtResult = await vt.getIpReport(ind.value);
+              if (vtResult.status === 'success') {
+                allEnrichedIndicators.push(...sigma.extractFromVTResponse(vtResult.data));
+              }
+              const shodanResult = await shodan.getHostInfo(ind.value);
+              if (shodanResult.status === 'success') {
+                allEnrichedIndicators.push(...sigma.extractFromShodanResponse(shodanResult.data));
+              }
+              break;
+            }
+            case 'domain': {
+              const vtResult = await vt.getDomainReport(ind.value);
+              if (vtResult.status === 'success') {
+                allEnrichedIndicators.push(...sigma.extractFromVTResponse(vtResult.data));
+              }
+              break;
+            }
+            case 'hash': {
+              const vtResult = await vt.getFileReport(ind.value);
+              if (vtResult.status === 'success') {
+                allEnrichedIndicators.push(...sigma.extractFromVTResponse(vtResult.data));
+              }
+              break;
+            }
+            case 'cve': {
+              const nvdResult = await nvd.getCveDetails(ind.value);
+              if (nvdResult.status === 'success') {
+                allEnrichedIndicators.push(...sigma.extractFromNVDResponse(nvdResult.data));
+              }
+              break;
+            }
+            case 'url': {
+              const vtResult = await vt.getUrlReport(ind.value);
+              if (vtResult.status === 'success') {
+                allEnrichedIndicators.push(...sigma.extractFromVTResponse(vtResult.data));
+              }
+              break;
+            }
+          }
+        }
+
+        if (allEnrichedIndicators.length === 0) {
+          return { content: [{ type: 'text', text: JSON.stringify({
+            provider: 'Sigma',
+            data: null,
+            status: 'error',
+            message: 'No indicators could be enriched from the provided inputs.',
+          }) }] };
+        }
+
+        const sigmaResult = sigma.generateFromIndicators(allEnrichedIndicators, {
+          level: args.level as any,
+          status: args.status as any,
+          author: args.author as string | undefined,
+          outputFormat: args.outputFormat as any,
+          platform: args.platform as any,
+          mitreAttack: args.mitreAttack ? JSON.parse(args.mitreAttack as string) : undefined,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(sigmaResult) }] };
+      }
+      case 'parse_sigma_rule': {
+        const parseResult = parseSigmaRule(args.yaml as string);
+        return { content: [{ type: 'text', text: JSON.stringify(parseResult) }] };
+      }
+      case 'parse_sigma_rules': {
+        const multiParseResult = parseSigmaRules(args.yaml as string);
+        return { content: [{ type: 'text', text: JSON.stringify(multiParseResult) }] };
+      }
+      case 'analyze_sigma_rules': {
+        const parsed = parseSigmaRules(args.yaml as string);
+        if (!parsed.success || !parsed.data) {
+          return { content: [{ type: 'text', text: JSON.stringify(parsed) }] };
+        }
+        const rules = Array.isArray(parsed.data) ? parsed.data : [parsed.data];
+        const analysis = analyzeSigmaRules(rules);
+        return { content: [{ type: 'text', text: JSON.stringify(analysis) }] };
+      }
+      case 'convert_sigma_rule': {
+        const convResult = convertSigmaRule(args.yaml as string, args.target as any);
+        return { content: [{ type: 'text', text: JSON.stringify(convResult) }] };
+      }
+      case 'convert_sigma_rules': {
+        const convResults = convertSigmaRules(args.yaml as string, args.target as any);
+        return { content: [{ type: 'text', text: JSON.stringify(convResults) }] };
+      }
+      case 'search_sigma_hq': {
+        const hqResult = await searchSigmaHQ(args.query as string, (args.maxResults as number) || 20);
+        return { content: [{ type: 'text', text: JSON.stringify(hqResult) }] };
+      }
+      case 'search_sigma_hq_cve': {
+        const cveResult = await searchSigmaHQByCVE(args.cveId as string, (args.maxResults as number) || 10);
+        return { content: [{ type: 'text', text: JSON.stringify(cveResult) }] };
+      }
+      case 'search_sigma_hq_technique': {
+        const techResult = await searchSigmaHQByTechnique(args.techniqueId as string, (args.maxResults as number) || 10);
+        return { content: [{ type: 'text', text: JSON.stringify(techResult) }] };
       }
       default:
         throw new Error(`Tool not found: ${name}`);
