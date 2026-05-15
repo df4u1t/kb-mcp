@@ -1,0 +1,1 @@
+{"version":3,"file":"anyrun.d.ts","sourceRoot":"","sources":["anyrun.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,gBAAgB,EAAE,MAAM,UAAU,CAAC;AAI5C,qBAAa,cAAc;IACzB,OAAO,CAAC,MAAM,CAAS;;YAST,OAAO;IA4Bf,cAAc,CAAC,MAAM,EAAE,MAAM,GAAG,OAAO,CAAC,gBAAgB,CAAC;IAIzD,WAAW,CAAC,KAAK,EAAE,MAAM,GAAG,OAAO,CAAC,gBAAgB,CAAC;CAG5D"}
