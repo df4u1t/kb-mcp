@@ -38,90 +38,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: 'vt_file_report',
-        description: 'Get a VirusTotal report for a file hash (MD5, SHA1, SHA256)',
+        name: 'vt_lookup',
+        description: 'Look up a file hash, URL, domain, or IP address on VirusTotal',
         inputSchema: {
           type: 'object',
           properties: {
-            hash: { type: 'string', description: 'The file hash to lookup' },
+            type: { type: 'string', enum: ['file', 'url', 'domain', 'ip'], description: 'Type of indicator to look up' },
+            value: { type: 'string', description: 'The indicator value (hash, URL, domain, or IP)' },
           },
-          required: ['hash'],
+          required: ['type', 'value'],
         },
       },
       {
-        name: 'vt_url_report',
-        description: 'Get a VirusTotal report for a URL',
+        name: 'shodan_query',
+        description: 'Query Shodan for host information by IP or search for hosts matching a query',
         inputSchema: {
           type: 'object',
           properties: {
-            url: { type: 'string', description: 'The URL to lookup' },
+            action: { type: 'string', enum: ['host_info', 'search'], description: '"host_info" for IP lookup, "search" for keyword search' },
+            value: { type: 'string', description: 'IP address (for host_info) or search query (for search)' },
           },
-          required: ['url'],
+          required: ['action', 'value'],
         },
       },
       {
-        name: 'vt_domain_report',
-        description: 'Get a VirusTotal report for a domain',
+        name: 'nvd_query',
+        description: 'Query the NVD for CVE details by ID, or search CVEs by keyword/date/severity. Use daysBack for recent CVEs (e.g., daysBack=0 for today, 7 for past week, 30 for past month).',
         inputSchema: {
           type: 'object',
           properties: {
-            domain: { type: 'string', description: 'The domain to lookup' },
-          },
-          required: ['domain'],
-        },
-      },
-      {
-        name: 'vt_ip_report',
-        description: 'Get a VirusTotal report for an IP address',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            ip: { type: 'string', description: 'The IP address to lookup' },
-          },
-          required: ['ip'],
-        },
-      },
-      {
-        name: 'shodan_host_info',
-        description: 'Get Shodan host information for an IP address',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            ip: { type: 'string', description: 'The IP address to lookup' },
-          },
-          required: ['ip'],
-        },
-      },
-      {
-        name: 'shodan_search',
-        description: 'Search Shodan for hosts matching a query',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'The Shodan search query' },
-          },
-          required: ['query'],
-        },
-      },
-      {
-        name: 'nvd_cve_details',
-        description: 'Get detailed information for a specific CVE ID',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            cveId: { type: 'string', description: 'The CVE ID (e.g., CVE-2021-44228)' },
-          },
-          required: ['cveId'],
-        },
-      },
-      {
-        name: 'nvd_search',
-        description: 'Search NVD for CVEs. Use daysBack to search for recent CVEs (e.g., daysBack=0 for today, daysBack=7 for past week, daysBack=30 for past month). The server automatically computes the correct dates.',
-        inputSchema: {
-          type: 'object',
-          properties: {
+            cveId: { type: 'string', description: 'Specific CVE ID to fetch details for (e.g., CVE-2021-44228). When provided, other search params are ignored.' },
             keyword: { type: 'string', description: 'Optional keyword to search for' },
-            daysBack: { type: 'number', description: 'Look back N days from today. Use this instead of manual dates. Examples: 0=today, 7=past week, 30=past month, 90=past 3 months' },
+            daysBack: { type: 'number', description: 'Look back N days from today. Examples: 0=today, 7=past week, 30=past month, 90=past 3 months' },
             pubStartDate: { type: 'string', description: 'Optional explicit published start date (ISO 8601). Only use if daysBack is not sufficient.' },
             pubEndDate: { type: 'string', description: 'Optional explicit published end date (ISO 8601)' },
             lastModStartDate: { type: 'string', description: 'Filter by last modified start date (ISO 8601)' },
@@ -133,14 +81,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: 'anyrun_task_details',
-        description: 'Get details for an AnyRun task',
+        name: 'anyrun_task',
+        description: 'Get details or analysis report for an AnyRun task by task ID',
         inputSchema: {
           type: 'object',
           properties: {
+            action: { type: 'string', enum: ['details', 'report'], description: '"details" for task info, "report" for full analysis report' },
             taskId: { type: 'string', description: 'The AnyRun task ID' },
           },
-          required: ['taskId'],
+          required: ['action', 'taskId'],
+        },
+      },
+      {
+        name: 'anyrun_submit',
+        description: 'Submit a URL or local file to AnyRun for sandbox analysis',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['url', 'file'], description: 'Type of submission' },
+            value: { type: 'string', description: 'The URL to analyze or absolute path to the file on disk' },
+          },
+          required: ['type', 'value'],
         },
       },
       {
@@ -152,39 +113,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             query: { type: 'string', description: 'The search query' },
           },
           required: ['query'],
-        },
-      },
-      {
-        name: 'anyrun_submit_url',
-        description: 'Submit a URL to AnyRun for analysis',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            url: { type: 'string', description: 'The URL to analyze' },
-          },
-          required: ['url'],
-        },
-      },
-      {
-        name: 'anyrun_submit_file',
-        description: 'Submit a local file to AnyRun for analysis',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            filePath: { type: 'string', description: 'The absolute path to the file on disk' },
-          },
-          required: ['filePath'],
-        },
-      },
-      {
-        name: 'anyrun_get_report',
-        description: 'Retrieve the final analysis report for a completed AnyRun task',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            taskId: { type: 'string', description: 'The AnyRun task ID' },
-          },
-          required: ['taskId'],
         },
       },
       {
@@ -201,103 +129,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: 'otx_indicator_pulses',
-        description: 'Find all OTX Pulses associated with an indicator',
+        name: 'otx_query',
+        description: 'Query AlienVault OTX for pulses, activity, or indicator associations',
         inputSchema: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['IPv4', 'IPv6', 'domain', 'file', 'url'], description: 'The type of indicator' },
-            value: { type: 'string', description: 'The indicator value' },
-          },
-          required: ['type', 'value'],
-        },
-      },
-      {
-        name: 'otx_pulse_details',
-        description: 'Get full details of a specific threat pulse',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            pulseId: { type: 'string', description: 'The OTX Pulse ID' },
-          },
-          required: ['pulseId'],
-        },
-      },
-      {
-        name: 'otx_search_pulses',
-        description: 'Search for pulses by keyword. When modifiedSince is provided, searches your subscribed feed by date (use get_current_datetime first to get the current date). When omitted, searches globally by relevance.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'The search query (keyword)' },
-            modifiedSince: { type: 'string', description: 'Optional ISO 8601 date. Only return pulses modified after this date. Use get_current_datetime tool first to get the current date, then compute the past date (e.g., 3 months ago). Example: "2026-02-15T00:00:00.000Z"' },
-            page: { type: 'number', description: 'Page number (default: 1). Only used when modifiedSince is not set.' },
-            limit: { type: 'number', description: 'Results per page (default: 25, max: 200 when modifiedSince is set)' },
-          },
-          required: ['query'],
-        },
-      },
-      {
-        name: 'otx_subscribed_pulses',
-        description: 'Get your subscribed pulse feed from AlienVault OTX (paginated)',
-        inputSchema: {
-          type: 'object',
-          properties: {
+            action: { type: 'string', enum: ['indicator_pulses', 'pulse_details', 'search_pulses', 'subscribed_pulses', 'recent_activity'], description: 'What to query' },
+            indicator_type: { type: 'string', enum: ['IPv4', 'IPv6', 'domain', 'file', 'url'], description: 'Indicator type (required for indicator_pulses)' },
+            value: { type: 'string', description: 'Indicator value (required for indicator_pulses)' },
+            pulseId: { type: 'string', description: 'Pulse ID (required for pulse_details)' },
+            query: { type: 'string', description: 'Search keyword (required for search_pulses)' },
+            modifiedSince: { type: 'string', description: 'ISO 8601 date filter (for search_pulses with date scope)' },
             page: { type: 'number', description: 'Page number (default: 1)' },
-            limit: { type: 'number', description: 'Results per page (default: 20)' },
+            limit: { type: 'number', description: 'Results per page (default: 25)' },
           },
+          required: ['action'],
         },
       },
       {
-        name: 'otx_recent_activity',
-        description: 'Get recent OTX community activity (paginated)',
+        name: 'github_search',
+        description: 'Search GitHub for security advisories or exploit PoC code related to a CVE or vulnerability',
         inputSchema: {
           type: 'object',
           properties: {
-            page: { type: 'number', description: 'Page number (default: 1)' },
-            limit: { type: 'number', description: 'Results per page (default: 20)' },
+            search_type: { type: 'string', enum: ['advisories', 'poc'], description: '"advisories" for security advisories, "poc" for exploit proof-of-concept code' },
+            query: { type: 'string', description: 'Search query (e.g., "CVE-2021-44228" or a vulnerability name)' },
           },
-        },
-      },
-      {
-        name: 'get_current_datetime',
-        description: 'Get the current date and time in ISO 8601 format. Use this to compute date ranges for other tools (e.g., modifiedSince for otx_search_pulses).',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-        },
-      },
-      {
-        name: 'fetch_url',
-        description: 'Fetch the content of a web page or API endpoint. Useful for retrieving threat reports, security advisories, or any web-based intelligence.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            url: { type: 'string', description: 'The URL to fetch' },
-          },
-          required: ['url'],
-        },
-      },
-      {
-        name: 'github_search_advisories',
-        description: 'Search GitHub for security advisories and vulnerability discussions',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'The search query (e.g., "CVE-2021-44228")' },
-          },
-          required: ['query'],
-        },
-      },
-      {
-        name: 'github_search_poc',
-        description: 'Search GitHub for exploit PoC code related to a CVE or vulnerability',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            cveId: { type: 'string', description: 'The CVE ID to search for (e.g., "CVE-2021-44228")' },
-          },
-          required: ['cveId'],
+          required: ['search_type', 'query'],
         },
       },
       {
@@ -318,6 +176,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['indicators'],
         },
       },
+      {
+        name: 'get_current_datetime',
+        description: 'Get the current date and time in ISO 8601 format',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'fetch_url',
+        description: 'Fetch the content of a web page or API endpoint. Useful for retrieving threat reports, security advisories, or any web-based intelligence.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'The URL to fetch' },
+          },
+          required: ['url'],
+        },
+      },
     ],
   };
 });
@@ -327,30 +204,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
-      case 'vt_file_report':
-        return { content: [{ type: 'text', text: JSON.stringify(await vt.getFileReport(args.hash as string)) }] };
-      case 'vt_url_report':
-        return { content: [{ type: 'text', text: JSON.stringify(await vt.getUrlReport(args.url as string)) }] };
-      case 'vt_domain_report':
-        return { content: [{ type: 'text', text: JSON.stringify(await vt.getDomainReport(args.domain as string)) }] };
-      case 'vt_ip_report':
-        return { content: [{ type: 'text', text: JSON.stringify(await vt.getIpReport(args.ip as string)) }] };
-      case 'shodan_host_info':
-        return { content: [{ type: 'text', text: JSON.stringify(await shodan.getHostInfo(args.ip as string)) }] };
-      case 'shodan_search':
-        return { content: [{ type: 'text', text: JSON.stringify(await shodan.searchHosts(args.query as string)) }] };
-      case 'nvd_cve_details':
-        return { content: [{ type: 'text', text: JSON.stringify(await nvd.getCveDetails(args.cveId as string)) }] };
-      case 'nvd_search': {
+      case 'vt_lookup': {
+        const type = args.type as string;
+        const value = args.value as string;
+        switch (type) {
+          case 'file': return { content: [{ type: 'text', text: JSON.stringify(await vt.getFileReport(value)) }] };
+          case 'url': return { content: [{ type: 'text', text: JSON.stringify(await vt.getUrlReport(value)) }] };
+          case 'domain': return { content: [{ type: 'text', text: JSON.stringify(await vt.getDomainReport(value)) }] };
+          case 'ip': return { content: [{ type: 'text', text: JSON.stringify(await vt.getIpReport(value)) }] };
+          default: throw new Error(`Unknown VT lookup type: ${type}`);
+        }
+      }
+      case 'shodan_query': {
+        const shodanAction = args.action as string;
+        const shodanValue = args.value as string;
+        switch (shodanAction) {
+          case 'host_info': return { content: [{ type: 'text', text: JSON.stringify(await shodan.getHostInfo(shodanValue)) }] };
+          case 'search': return { content: [{ type: 'text', text: JSON.stringify(await shodan.searchHosts(shodanValue)) }] };
+          default: throw new Error(`Unknown Shodan action: ${shodanAction}`);
+        }
+      }
+      case 'nvd_query': {
+        const cveId = args.cveId as string | undefined;
+        // If cveId is provided, fetch single CVE details
+        if (cveId) {
+          return { content: [{ type: 'text', text: JSON.stringify(await nvd.getCveDetails(cveId)) }] };
+        }
+        // Otherwise, search with optional filters
         const keyword = args.keyword as string | undefined;
         const daysBack = args.daysBack as number | undefined;
 
-        // If daysBack is provided, compute date range automatically
         if (daysBack !== undefined) {
           const endDate = new Date();
           const startDate = new Date();
           startDate.setDate(startDate.getDate() - daysBack);
-          // When daysBack is 0, use start of today to avoid zero-length range
           if (daysBack === 0) {
             startDate.setHours(0, 0, 0, 0);
           }
@@ -375,28 +262,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           startIndex: args.startIndex as number | undefined,
         })) }] };
       }
-      case 'anyrun_task_details':
-        return { content: [{ type: 'text', text: JSON.stringify(await anyrun.getTaskDetails(args.taskId as string)) }] };
+      case 'anyrun_task': {
+        const taskAction = args.action as string;
+        const taskId = args.taskId as string;
+        switch (taskAction) {
+          case 'details': return { content: [{ type: 'text', text: JSON.stringify(await anyrun.getTaskDetails(taskId)) }] };
+          case 'report': return { content: [{ type: 'text', text: JSON.stringify(await anyrun.getAnalysisReport(taskId)) }] };
+          default: throw new Error(`Unknown AnyRun task action: ${taskAction}`);
+        }
+      }
+      case 'anyrun_submit': {
+        const submitType = args.type as string;
+        const submitValue = args.value as string;
+        switch (submitType) {
+          case 'url': return { content: [{ type: 'text', text: JSON.stringify(await anyrun.submitUrl(submitValue)) }] };
+          case 'file': return { content: [{ type: 'text', text: JSON.stringify(await anyrun.submitFile(submitValue)) }] };
+          default: throw new Error(`Unknown AnyRun submit type: ${submitType}`);
+        }
+      }
       case 'anyrun_search':
         return { content: [{ type: 'text', text: JSON.stringify(await anyrun.searchTasks(args.query as string)) }] };
-      case 'anyrun_submit_url':
-        return { content: [{ type: 'text', text: JSON.stringify(await anyrun.submitUrl(args.url as string)) }] };
-      case 'anyrun_submit_file':
-        return { content: [{ type: 'text', text: JSON.stringify(await anyrun.submitFile(args.filePath as string)) }] };
-      case 'anyrun_get_report':
-        return { content: [{ type: 'text', text: JSON.stringify(await anyrun.getAnalysisReport(args.taskId as string)) }] };
       case 'otx_indicator_details':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.getIndicatorDetails(args.type as string, args.value as string, args.section as string | undefined)) }] };
-      case 'otx_indicator_pulses':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.getIndicatorPulses(args.type as string, args.value as string)) }] };
-      case 'otx_pulse_details':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.getPulseDetails(args.pulseId as string)) }] };
-      case 'otx_search_pulses':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.searchPulses(args.query as string, args.page as number || 1, args.limit as number || 25, args.modifiedSince as string | undefined)) }] };
-      case 'otx_subscribed_pulses':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.getSubscribedPulses(args.page as number || 1, args.limit as number || 20)) }] };
-      case 'otx_recent_activity':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.getRecentActivity(args.page as number || 1, args.limit as number || 20)) }] };
+      case 'otx_query': {
+        const otxAction = args.action as string;
+        switch (otxAction) {
+          case 'indicator_pulses':
+            return { content: [{ type: 'text', text: JSON.stringify(await otx.getIndicatorPulses(args.indicator_type as string, args.value as string)) }] };
+          case 'pulse_details':
+            return { content: [{ type: 'text', text: JSON.stringify(await otx.getPulseDetails(args.pulseId as string)) }] };
+          case 'search_pulses':
+            return { content: [{ type: 'text', text: JSON.stringify(await otx.searchPulses(args.query as string, args.page as number || 1, args.limit as number || 25, args.modifiedSince as string | undefined)) }] };
+          case 'subscribed_pulses':
+            return { content: [{ type: 'text', text: JSON.stringify(await otx.getSubscribedPulses(args.page as number || 1, args.limit as number || 20)) }] };
+          case 'recent_activity':
+            return { content: [{ type: 'text', text: JSON.stringify(await otx.getRecentActivity(args.page as number || 1, args.limit as number || 20)) }] };
+          default:
+            throw new Error(`Unknown OTX action: ${otxAction}`);
+        }
+      }
+      case 'github_search': {
+        const ghType = args.search_type as string;
+        const ghQuery = args.query as string;
+        switch (ghType) {
+          case 'advisories': return { content: [{ type: 'text', text: JSON.stringify(await github.searchAdvisories(ghQuery)) }] };
+          case 'poc': return { content: [{ type: 'text', text: JSON.stringify(await github.searchExploitPoC(ghQuery)) }] };
+          default: throw new Error(`Unknown GitHub search type: ${ghType}`);
+        }
+      }
       case 'get_current_datetime':
         return { content: [{ type: 'text', text: JSON.stringify({
           provider: 'System',
@@ -419,10 +332,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: 'success',
         }) }] };
       }
-      case 'github_search_advisories':
-        return { content: [{ type: 'text', text: JSON.stringify(await github.searchAdvisories(args.query as string)) }] };
-      case 'github_search_poc':
-        return { content: [{ type: 'text', text: JSON.stringify(await github.searchExploitPoC(args.cveId as string)) }] };
       case 'generate_sigma_rules': {
         const indicators = JSON.parse(args.indicators as string);
         const result = sigma.generateFromIndicators(indicators, {
