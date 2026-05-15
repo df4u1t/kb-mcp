@@ -12,6 +12,7 @@ import { AnyRunProvider } from './providers/anyrun.js';
 import { AlienVaultOTXProvider } from './providers/alienvault.js';
 import { GitHubProvider } from './providers/github.js';
 import { SigmaRuleGenerator } from './providers/sigma.js';
+import axios from 'axios';
 
 const vt = new VirusTotalProvider();
 const shodan = new ShodanProvider();
@@ -115,20 +116,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'nvd_search',
-        description: 'Search NVD for CVEs matching a keyword, with optional date range filtering',
+        description: 'Search NVD for CVEs. Use daysBack to search for recent CVEs (e.g., daysBack=0 for today, daysBack=7 for past week, daysBack=30 for past month). The server automatically computes the correct dates.',
         inputSchema: {
           type: 'object',
           properties: {
-            keyword: { type: 'string', description: 'The keyword to search for' },
-            daysBack: { type: 'number', description: 'Look back N days from today for published CVEs (overrides pubStartDate/pubEndDate)' },
-            pubStartDate: { type: 'string', description: 'Filter by published start date (ISO 8601, e.g., "2026-01-01T00:00:00.000Z")' },
-            pubEndDate: { type: 'string', description: 'Filter by published end date (ISO 8601)' },
+            keyword: { type: 'string', description: 'Optional keyword to search for' },
+            daysBack: { type: 'number', description: 'Look back N days from today. Use this instead of manual dates. Examples: 0=today, 7=past week, 30=past month, 90=past 3 months' },
+            pubStartDate: { type: 'string', description: 'Optional explicit published start date (ISO 8601). Only use if daysBack is not sufficient.' },
+            pubEndDate: { type: 'string', description: 'Optional explicit published end date (ISO 8601)' },
             lastModStartDate: { type: 'string', description: 'Filter by last modified start date (ISO 8601)' },
             lastModEndDate: { type: 'string', description: 'Filter by last modified end date (ISO 8601)' },
+            cvssV3Severity: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], description: 'Filter by CVSS v3 severity rating' },
             resultsPerPage: { type: 'number', description: 'Results per page (max 200)' },
             startIndex: { type: 'number', description: 'Start index for pagination' },
           },
-          required: ['keyword'],
         },
       },
       {
@@ -224,11 +225,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'otx_search_pulses',
-        description: 'Search for pulses by keyword',
+        description: 'Search for pulses by keyword. When modifiedSince is provided, searches your subscribed feed by date (use get_current_datetime first to get the current date). When omitted, searches globally by relevance.',
         inputSchema: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'The search query' },
+            query: { type: 'string', description: 'The search query (keyword)' },
+            modifiedSince: { type: 'string', description: 'Optional ISO 8601 date. Only return pulses modified after this date. Use get_current_datetime tool first to get the current date, then compute the past date (e.g., 3 months ago). Example: "2026-02-15T00:00:00.000Z"' },
+            page: { type: 'number', description: 'Page number (default: 1). Only used when modifiedSince is not set.' },
+            limit: { type: 'number', description: 'Results per page (default: 25, max: 200 when modifiedSince is set)' },
           },
           required: ['query'],
         },
@@ -253,6 +257,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             page: { type: 'number', description: 'Page number (default: 1)' },
             limit: { type: 'number', description: 'Results per page (default: 20)' },
           },
+        },
+      },
+      {
+        name: 'get_current_datetime',
+        description: 'Get the current date and time in ISO 8601 format. Use this to compute date ranges for other tools (e.g., modifiedSince for otx_search_pulses).',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'fetch_url',
+        description: 'Fetch the content of a web page or API endpoint. Useful for retrieving threat reports, security advisories, or any web-based intelligence.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'The URL to fetch' },
+          },
+          required: ['url'],
         },
       },
       {
@@ -319,7 +342,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'nvd_cve_details':
         return { content: [{ type: 'text', text: JSON.stringify(await nvd.getCveDetails(args.cveId as string)) }] };
       case 'nvd_search': {
-        const keyword = args.keyword as string;
+        const keyword = args.keyword as string | undefined;
         const daysBack = args.daysBack as number | undefined;
 
         // If daysBack is provided, compute date range automatically
@@ -327,10 +350,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const endDate = new Date();
           const startDate = new Date();
           startDate.setDate(startDate.getDate() - daysBack);
+          // When daysBack is 0, use start of today to avoid zero-length range
+          if (daysBack === 0) {
+            startDate.setHours(0, 0, 0, 0);
+          }
           return { content: [{ type: 'text', text: JSON.stringify(await nvd.searchCves({
             keyword,
             pubStartDate: startDate.toISOString(),
             pubEndDate: endDate.toISOString(),
+            cvssV3Severity: args.cvssV3Severity as string | undefined,
             resultsPerPage: args.resultsPerPage as number | undefined,
             startIndex: args.startIndex as number | undefined,
           })) }] };
@@ -342,6 +370,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           pubEndDate: args.pubEndDate as string | undefined,
           lastModStartDate: args.lastModStartDate as string | undefined,
           lastModEndDate: args.lastModEndDate as string | undefined,
+          cvssV3Severity: args.cvssV3Severity as string | undefined,
           resultsPerPage: args.resultsPerPage as number | undefined,
           startIndex: args.startIndex as number | undefined,
         })) }] };
@@ -363,11 +392,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'otx_pulse_details':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.getPulseDetails(args.pulseId as string)) }] };
       case 'otx_search_pulses':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.searchPulses(args.query as string)) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(await otx.searchPulses(args.query as string, args.page as number || 1, args.limit as number || 25, args.modifiedSince as string | undefined)) }] };
       case 'otx_subscribed_pulses':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.getSubscribedPulses(args.page as number || 1, args.limit as number || 20)) }] };
       case 'otx_recent_activity':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.getRecentActivity(args.page as number || 1, args.limit as number || 20)) }] };
+      case 'get_current_datetime':
+        return { content: [{ type: 'text', text: JSON.stringify({
+          provider: 'System',
+          data: {
+            iso8601: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0],
+            unixTimestamp: Date.now(),
+          },
+          status: 'success',
+        }) }] };
+      case 'fetch_url': {
+        const response = await axios.get(args.url as string, {
+          timeout: 15000,
+          headers: { 'User-Agent': 'kb-mcp-security-server/1.0' },
+          validateStatus: () => true,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify({
+          provider: 'Web',
+          data: { url: args.url, status: response.status, content: typeof response.data === 'string' ? response.data : JSON.stringify(response.data) },
+          status: 'success',
+        }) }] };
+      }
       case 'github_search_advisories':
         return { content: [{ type: 'text', text: JSON.stringify(await github.searchAdvisories(args.query as string)) }] };
       case 'github_search_poc':

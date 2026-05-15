@@ -136,8 +136,34 @@ export class AlienVaultOTXProvider {
     return this.request(`/pulses/${pulseId}`);
   }
 
-  async searchPulses(query: string): Promise<ProviderResponse> {
-    return this.request('/search/pulses', { query });
+  async searchPulses(query: string, page: number = 1, limit: number = 25, modifiedSince?: string): Promise<ProviderResponse> {
+    // If modifiedSince is provided, use the subscribed pulses endpoint with date filtering
+    // and apply keyword as a client-side filter (search endpoint doesn't support date filtering)
+    if (modifiedSince) {
+      const response = await this.request('/pulses/subscribed', {
+        modified_since: modifiedSince,
+        limit: Math.min(limit, 200),
+      });
+
+      // Apply keyword filter client-side if needed
+      if (query && response.status === 'success') {
+        const data = response.data as any;
+        if (data?.results) {
+          const lowerQuery = query.toLowerCase();
+          data.results = data.results.filter((pulse: any) =>
+            (pulse.name && pulse.name.toLowerCase().includes(lowerQuery)) ||
+            (pulse.description && pulse.description.toLowerCase().includes(lowerQuery)) ||
+            (pulse.tags && pulse.tags.some((t: string) => t.toLowerCase().includes(lowerQuery)))
+          );
+          data.count = data.results.length;
+        }
+      }
+
+      return response;
+    }
+
+    // Without modifiedSince, use the search endpoint (relevance-based)
+    return this.request('/search/pulses', { q: query, page, limit });
   }
 
   /**

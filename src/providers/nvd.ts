@@ -6,11 +6,12 @@ import { ProviderResponse } from '../types/index.js';
 const NVD_BASE_URL = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
 
 export interface NvdSearchOptions {
-  keyword: string;
+  keyword?: string;
   pubStartDate?: string;
   pubEndDate?: string;
   lastModStartDate?: string;
   lastModEndDate?: string;
+  cvssV3Severity?: string;
   resultsPerPage?: number;
   startIndex?: number;
 }
@@ -59,12 +60,14 @@ export class NVDProvider {
   }
 
   async searchCves(options: NvdSearchOptions): Promise<ProviderResponse> {
-    const params: any = { keywordSearch: options.keyword };
+    const params: any = {};
 
+    if (options.keyword) params.keywordSearch = options.keyword;
     if (options.pubStartDate) params.pubStartDate = options.pubStartDate;
     if (options.pubEndDate) params.pubEndDate = options.pubEndDate;
     if (options.lastModStartDate) params.lastModStartDate = options.lastModStartDate;
     if (options.lastModEndDate) params.lastModEndDate = options.lastModEndDate;
+    if (options.cvssV3Severity) params.cvssV3Severity = options.cvssV3Severity;
     if (options.resultsPerPage !== undefined) params.resultsPerPage = options.resultsPerPage;
     if (options.startIndex !== undefined) params.startIndex = options.startIndex;
 
