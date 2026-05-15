@@ -18,7 +18,7 @@ This server implements a set of tools that allow an LLM to perform the following
 
 ### NVD (National Vulnerability Database)
 - `nvd_cve_details`: Get detailed information for a specific CVE ID.
-- `nvd_search`: Search for CVEs using keywords.
+- `nvd_search`: Search for CVEs using keywords with optional date range filtering (`daysBack`, `pubStartDate`/`pubEndDate`, `lastModStartDate`/`lastModEndDate`), pagination (`resultsPerPage`, `startIndex`).
 
 ### AnyRun
 - `anyrun_task_details`: Get details for a specific sandbox task.

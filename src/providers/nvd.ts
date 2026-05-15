@@ -5,6 +5,16 @@ import { ProviderResponse } from '../types/index.js';
 
 const NVD_BASE_URL = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
 
+export interface NvdSearchOptions {
+  keyword: string;
+  pubStartDate?: string;
+  pubEndDate?: string;
+  lastModStartDate?: string;
+  lastModEndDate?: string;
+  resultsPerPage?: number;
+  startIndex?: number;
+}
+
 export class NVDProvider {
   private apiKey: string;
 
@@ -48,7 +58,34 @@ export class NVDProvider {
     return this.request({ cveId });
   }
 
-  async searchCves(keyword: string): Promise<ProviderResponse> {
-    return this.request({ keywordSearch: keyword });
+  async searchCves(options: NvdSearchOptions): Promise<ProviderResponse> {
+    const params: any = { keywordSearch: options.keyword };
+
+    if (options.pubStartDate) params.pubStartDate = options.pubStartDate;
+    if (options.pubEndDate) params.pubEndDate = options.pubEndDate;
+    if (options.lastModStartDate) params.lastModStartDate = options.lastModStartDate;
+    if (options.lastModEndDate) params.lastModEndDate = options.lastModEndDate;
+    if (options.resultsPerPage !== undefined) params.resultsPerPage = options.resultsPerPage;
+    if (options.startIndex !== undefined) params.startIndex = options.startIndex;
+
+    return this.request(params);
+  }
+
+  async getRecentCves(days: number = 7, keyword?: string, maxResults: number = 50): Promise<ProviderResponse> {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const params: any = {
+      pubStartDate: startDate.toISOString(),
+      pubEndDate: endDate.toISOString(),
+      resultsPerPage: Math.min(maxResults, 200),
+    };
+
+    if (keyword) {
+      params.keywordSearch = keyword;
+    }
+
+    return this.request(params);
   }
 }

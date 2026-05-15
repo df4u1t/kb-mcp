@@ -113,11 +113,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'nvd_search',
-        description: 'Search NVD for CVEs matching a keyword',
+        description: 'Search NVD for CVEs matching a keyword, with optional date range filtering',
         inputSchema: {
           type: 'object',
           properties: {
             keyword: { type: 'string', description: 'The keyword to search for' },
+            daysBack: { type: 'number', description: 'Look back N days from today for published CVEs (overrides pubStartDate/pubEndDate)' },
+            pubStartDate: { type: 'string', description: 'Filter by published start date (ISO 8601, e.g., "2026-01-01T00:00:00.000Z")' },
+            pubEndDate: { type: 'string', description: 'Filter by published end date (ISO 8601)' },
+            lastModStartDate: { type: 'string', description: 'Filter by last modified start date (ISO 8601)' },
+            lastModEndDate: { type: 'string', description: 'Filter by last modified end date (ISO 8601)' },
+            resultsPerPage: { type: 'number', description: 'Results per page (max 200)' },
+            startIndex: { type: 'number', description: 'Start index for pagination' },
           },
           required: ['keyword'],
         },
@@ -268,8 +275,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(await shodan.searchHosts(args.query as string)) }] };
       case 'nvd_cve_details':
         return { content: [{ type: 'text', text: JSON.stringify(await nvd.getCveDetails(args.cveId as string)) }] };
-      case 'nvd_search':
-        return { content: [{ type: 'text', text: JSON.stringify(await nvd.searchCves(args.keyword as string)) }] };
+      case 'nvd_search': {
+        const keyword = args.keyword as string;
+        const daysBack = args.daysBack as number | undefined;
+
+        // If daysBack is provided, compute date range automatically
+        if (daysBack !== undefined) {
+          const endDate = new Date();
+          const startDate = new Date();
+          startDate.setDate(startDate.getDate() - daysBack);
+          return { content: [{ type: 'text', text: JSON.stringify(await nvd.searchCves({
+            keyword,
+            pubStartDate: startDate.toISOString(),
+            pubEndDate: endDate.toISOString(),
+            resultsPerPage: args.resultsPerPage as number | undefined,
+            startIndex: args.startIndex as number | undefined,
+          })) }] };
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify(await nvd.searchCves({
+          keyword,
+          pubStartDate: args.pubStartDate as string | undefined,
+          pubEndDate: args.pubEndDate as string | undefined,
+          lastModStartDate: args.lastModStartDate as string | undefined,
+          lastModEndDate: args.lastModEndDate as string | undefined,
+          resultsPerPage: args.resultsPerPage as number | undefined,
+          startIndex: args.startIndex as number | undefined,
+        })) }] };
+      }
       case 'anyrun_task_details':
         return { content: [{ type: 'text', text: JSON.stringify(await anyrun.getTaskDetails(args.taskId as string)) }] };
       case 'anyrun_search':
