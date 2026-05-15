@@ -39,6 +39,9 @@ This server implements a set of tools that allow an LLM to perform the following
 - `github_search_advisories`: Search GitHub for security advisories and vulnerability discussions.
 - `github_search_poc`: Search GitHub for exploit PoC code related to a CVE or vulnerability.
 
+### Sigma Rule Generator
+- `generate_sigma_rules`: Generate Sigma detection rules (YAML) from threat indicators. Accepts enriched indicators (IPs, domains, URLs, file hashes, CVEs) with optional descriptions, references, and tags. Supports `single` mode (all indicators in one rule) or `separate` mode (one rule per indicator). Configurable severity level, status, and author.
+
 ## Quick Start Guide
 
 ### Prerequisites

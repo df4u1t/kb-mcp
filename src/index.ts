@@ -11,6 +11,7 @@ import { NVDProvider } from './providers/nvd.js';
 import { AnyRunProvider } from './providers/anyrun.js';
 import { AlienVaultOTXProvider } from './providers/alienvault.js';
 import { GitHubProvider } from './providers/github.js';
+import { SigmaRuleGenerator } from './providers/sigma.js';
 
 const vt = new VirusTotalProvider();
 const shodan = new ShodanProvider();
@@ -18,6 +19,7 @@ const nvd = new NVDProvider();
 const anyrun = new AnyRunProvider();
 const otx = new AlienVaultOTXProvider();
 const github = new GitHubProvider();
+const sigma = new SigmaRuleGenerator();
 
 const server = new Server(
   {
@@ -275,6 +277,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['cveId'],
         },
       },
+      {
+        name: 'generate_sigma_rules',
+        description: 'Generate Sigma detection rules (YAML) from threat indicators such as IPs, domains, URLs, file hashes, or CVEs',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            indicators: {
+              type: 'string',
+              description: 'JSON string of threat indicators array. Each object: { "type": "ip|domain|url|hash|cve", "value": "...", "description?": "...", "references?": ["..."], "tags?": ["..."] }',
+            },
+            level: { type: 'string', enum: ['informational', 'low', 'medium', 'high', 'critical'], description: 'Severity level (default: high)' },
+            status: { type: 'string', enum: ['stable', 'test', 'experimental'], description: 'Rule status (default: test)' },
+            author: { type: 'string', description: 'Rule author name' },
+            outputFormat: { type: 'string', enum: ['single', 'separate'], description: '"single" combines all indicators into one rule, "separate" creates one rule per indicator (default: separate)' },
+          },
+          required: ['indicators'],
+        },
+      },
     ],
   };
 });
@@ -352,6 +372,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(await github.searchAdvisories(args.query as string)) }] };
       case 'github_search_poc':
         return { content: [{ type: 'text', text: JSON.stringify(await github.searchExploitPoC(args.cveId as string)) }] };
+      case 'generate_sigma_rules': {
+        const indicators = JSON.parse(args.indicators as string);
+        const result = sigma.generateFromIndicators(indicators, {
+          level: args.level as any,
+          status: args.status as any,
+          author: args.author as string | undefined,
+          outputFormat: args.outputFormat as any,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      }
       default:
         throw new Error(`Tool not found: ${name}`);
     }
