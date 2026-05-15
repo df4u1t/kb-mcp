@@ -28,10 +28,12 @@ This server implements a set of tools that allow an LLM to perform the following
 - `anyrun_get_report`: Retrieve the final analysis report.
 
 ### AlienVault OTX
-- `otx_indicator_info`: Get general information and reputation for an indicator.
+- `otx_indicator_details`: Get detailed information for an indicator. Returns all available sections (reputation, geo, malware, url_list, passive_dns, analysis) or a specific section if requested. Supports types: IPv4, IPv6, domain, hostname, file, url.
 - `otx_indicator_pulses`: Find all OTX Pulses associated with an indicator.
 - `otx_pulse_details`: Get full details of a specific threat pulse.
 - `otx_search_pulses`: Search for pulses by keyword.
+- `otx_subscribed_pulses`: Get your subscribed pulse feed (paginated).
+- `otx_recent_activity`: Get recent OTX community activity (paginated).
 
 ### GitHub
 - `github_search_advisories`: Search GitHub for security advisories and vulnerability discussions.

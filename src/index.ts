@@ -185,13 +185,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: 'otx_indicator_info',
-        description: 'Get general information and reputation for an indicator from AlienVault OTX',
+        name: 'otx_indicator_details',
+        description: 'Get detailed information for an indicator from AlienVault OTX. Returns all available sections (reputation, geo, malware, url_list, passive_dns, analysis) or a specific section if requested.',
         inputSchema: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['IPv4', 'IPv6', 'domain', 'file', 'url'], description: 'The type of indicator' },
+            type: { type: 'string', enum: ['IPv4', 'IPv6', 'domain', 'hostname', 'file', 'url'], description: 'The type of indicator' },
             value: { type: 'string', description: 'The indicator value' },
+            section: { type: 'string', enum: ['general', 'reputation', 'geo', 'malware', 'url_list', 'passive_dns', 'analysis'], description: 'Optional specific section to fetch. If omitted, all available sections are returned.' },
           },
           required: ['type', 'value'],
         },
@@ -228,6 +229,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             query: { type: 'string', description: 'The search query' },
           },
           required: ['query'],
+        },
+      },
+      {
+        name: 'otx_subscribed_pulses',
+        description: 'Get your subscribed pulse feed from AlienVault OTX (paginated)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', description: 'Page number (default: 1)' },
+            limit: { type: 'number', description: 'Results per page (default: 20)' },
+          },
+        },
+      },
+      {
+        name: 'otx_recent_activity',
+        description: 'Get recent OTX community activity (paginated)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', description: 'Page number (default: 1)' },
+            limit: { type: 'number', description: 'Results per page (default: 20)' },
+          },
         },
       },
       {
@@ -313,14 +336,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(await anyrun.submitFile(args.filePath as string)) }] };
       case 'anyrun_get_report':
         return { content: [{ type: 'text', text: JSON.stringify(await anyrun.getAnalysisReport(args.taskId as string)) }] };
-      case 'otx_indicator_info':
-        return { content: [{ type: 'text', text: JSON.stringify(await otx.getIndicatorGeneral(args.type as string, args.value as string)) }] };
+      case 'otx_indicator_details':
+        return { content: [{ type: 'text', text: JSON.stringify(await otx.getIndicatorDetails(args.type as string, args.value as string, args.section as string | undefined)) }] };
       case 'otx_indicator_pulses':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.getIndicatorPulses(args.type as string, args.value as string)) }] };
       case 'otx_pulse_details':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.getPulseDetails(args.pulseId as string)) }] };
       case 'otx_search_pulses':
         return { content: [{ type: 'text', text: JSON.stringify(await otx.searchPulses(args.query as string)) }] };
+      case 'otx_subscribed_pulses':
+        return { content: [{ type: 'text', text: JSON.stringify(await otx.getSubscribedPulses(args.page as number || 1, args.limit as number || 20)) }] };
+      case 'otx_recent_activity':
+        return { content: [{ type: 'text', text: JSON.stringify(await otx.getRecentActivity(args.page as number || 1, args.limit as number || 20)) }] };
       case 'github_search_advisories':
         return { content: [{ type: 'text', text: JSON.stringify(await github.searchAdvisories(args.query as string)) }] };
       case 'github_search_poc':
